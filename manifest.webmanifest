@@ -1,0 +1,17 @@
+{
+  "name": "伏地挺身教練",
+  "short_name": "伏地挺身",
+  "description": "用手機鏡頭分析伏地挺身姿勢：計次、下壓深度、塌腰翹臀。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f5f2",
+  "theme_color": "#1f7a4d",
+  "lang": "zh-Hant",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
