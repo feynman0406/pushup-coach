@@ -73,6 +73,8 @@ button:focus-visible, .filebtn:focus-within { outline: 3px solid var(--accent); 
 .filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .opts { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
 .opts label { display: flex; align-items: center; gap: 6px; }
+.opts select { font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); max-width: 200px; }
+button.mini { min-height: 0; padding: 4px 12px; font-size: 13px; border-radius: 8px; }
 .status { font-size: 13px; color: var(--muted); min-height: 1.4em; }
 .status.err { color: var(--bad); }
 .bar { height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
@@ -146,6 +148,8 @@ h2 { font-size: 15px; margin: 0; }
   </div>
   <div class="opts">
     <label><input type="checkbox" id="voice" checked> 語音提示</label>
+    <label class="voicepick">聲音 <select id="voiceSel"><option value="">自動</option></select></label>
+    <button type="button" id="voiceTest" class="mini">試聽</button>
     <label><input type="checkbox" id="rear" checked> 使用後鏡頭</label>
   </div>
 
@@ -386,11 +390,41 @@ function toast(r) {
 
 // ---------- 語音 ----------
 // iPhone Safari 只允許「使用者點擊當下」開始發聲；第一次在點擊時解鎖，之後的提示才會有聲音
+// iPhone 內建很多中文聲音，其中有些是「有趣」或機械感很重的聲音（Eloquence 系列），自動挑選時避開
+const ODD_VOICES = /eddy|flo|grandma|grandpa|reed|rocko|sandy|shelley|奶奶|爺爺|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|albert|fred|junior|kathy|ralph/i;
+function voiceList() {
+  try { return speechSynthesis.getVoices().filter((v) => /^zh/i.test(v.lang)); } catch { return []; }
+}
+function voiceScore(v) {
+  let s = 0;
+  if (v.lang === "zh-TW") s += 50; else if (/zh-HK/i.test(v.lang)) s += 10; else s += 20;
+  if (ODD_VOICES.test(v.name)) s -= 100;
+  if (/premium|enhanced|增強|高品質|siri/i.test(v.name)) s += 30;
+  if (/mei-?jia|美佳|li-?mu|ting-?ting|婷婷/i.test(v.name)) s += 15;
+  if (v.localService) s += 2;
+  return s;
+}
 function zhVoice() {
-  try { const vs = speechSynthesis.getVoices(); return vs.find((v) => v.lang === "zh-TW") || vs.find((v) => /^zh/i.test(v.lang)) || null; } catch { return null; }
+  const list = voiceList(); if (!list.length) return null;
+  let saved = ""; try { saved = localStorage.getItem("pushup-voice") || ""; } catch {}
+  const chosen = $("voiceSel")?.value || saved;
+  if (chosen) { const v = list.find((x) => x.voiceURI === chosen); if (v) return v; }
+  return [...list].sort((a, b) => voiceScore(b) - voiceScore(a))[0];
+}
+function fillVoices() {
+  const sel = $("voiceSel"); if (!sel) return;
+  const list = voiceList().sort((a, b) => voiceScore(b) - voiceScore(a));
+  let saved = ""; try { saved = localStorage.getItem("pushup-voice") || ""; } catch {}
+  sel.replaceChildren(new Option("自動（挑最自然的）", ""));
+  for (const v of list) sel.append(new Option(`${v.name}（${v.lang}）`, v.voiceURI));
+  if (saved && list.some((v) => v.voiceURI === saved)) sel.value = saved;
+}
+if ("speechSynthesis" in window) {
+  fillVoices();
+  try { speechSynthesis.addEventListener("voiceschanged", fillVoices); } catch {}
 }
 function utter(text, volume = 1) {
-  const u = new SpeechSynthesisUtterance(text); u.lang = "zh-TW"; u.rate = 1.1; u.volume = volume;
+  const u = new SpeechSynthesisUtterance(text); u.lang = "zh-TW"; u.rate = 1.0; u.volume = volume;
   const v = zhVoice(); if (v) u.voice = v;
   return u;
 }
@@ -561,6 +595,11 @@ function stopLive() {
 
 $("file").addEventListener("click", () => unlockSpeech());
 $("file").addEventListener("change", (e) => { const f = e.target.files[0]; if (f && landmarker) analyzeFile(f).catch((err) => setStatus(err.message, true)); e.target.value = ""; });
+$("voiceSel").addEventListener("change", (e) => { try { localStorage.setItem("pushup-voice", e.target.value); } catch {} });
+$("voiceTest").addEventListener("click", () => {
+  if (!("speechSynthesis" in window)) return;
+  try { speechSynthesis.cancel(); speechSynthesis.speak(utter("3，屁股不要塌。完成 6 下，其中 3 下標準")); } catch {}
+});
 $("liveBtn").addEventListener("click", () => {
   if (!landmarker) return;
   if (mode === "live") { stopLive(); return; }
