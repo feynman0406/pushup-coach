@@ -385,11 +385,32 @@ function toast(r) {
 }
 
 // ---------- 語音 ----------
+// iPhone Safari 只允許「使用者點擊當下」開始發聲；第一次在點擊時解鎖，之後的提示才會有聲音
+function zhVoice() {
+  try { const vs = speechSynthesis.getVoices(); return vs.find((v) => v.lang === "zh-TW") || vs.find((v) => /^zh/i.test(v.lang)) || null; } catch { return null; }
+}
+function utter(text, volume = 1) {
+  const u = new SpeechSynthesisUtterance(text); u.lang = "zh-TW"; u.rate = 1.1; u.volume = volume;
+  const v = zhVoice(); if (v) u.voice = v;
+  return u;
+}
+function unlockSpeech(text) {
+  if (!("speechSynthesis" in window)) return;
+  try { speechSynthesis.cancel(); speechSynthesis.speak(utter(text || "好", text && $("voice").checked ? 1 : 0)); } catch {}
+}
 function speak(text) {
   if (!$("voice").checked || !("speechSynthesis" in window)) return;
-  try { const u = new SpeechSynthesisUtterance(text); u.lang = "zh-TW"; u.rate = 1.15; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch {}
+  try {
+    // 先 cancel 再立刻 speak 在 iOS 上會把新的那句吃掉，所以中間隔一下
+    if (speechSynthesis.speaking || speechSynthesis.pending) { speechSynthesis.cancel(); setTimeout(() => speechSynthesis.speak(utter(text)), 120); }
+    else speechSynthesis.speak(utter(text));
+  } catch {}
 }
 const CUE = { sag: "屁股不要塌", pike: "屁股放低", shallow: "再低一點", lockout: "手臂打直", fast: "慢一點" };
+function summarySpeech(reps) {
+  const good = reps.filter((r) => r.verdict === "良好").length;
+  return reps.length ? `完成 ${reps.length} 下，其中 ${good} 下標準` : "沒有偵測到完整的伏地挺身";
+}
 function cueFor(r) { return r.tags.length ? `${r.index}，${CUE[r.tags[0]]}` : `${r.index}`; }
 
 // ---------- 結果 ----------
@@ -491,6 +512,7 @@ function finishFile() {
   mode = "review"; $("bar").hidden = true;
   renderResult(analyzer.reps);
   setStatus(`分析完成：${analyzer.reps.length} 下。可以重播影片看每一格的骨架。`);
+  speak(summarySpeech(analyzer.reps));
   video.controls = true;
   const frames = analyzer.frames;
   const W = video.videoWidth, H = video.videoHeight;
@@ -518,7 +540,6 @@ async function startLive() {
   $("empty").hidden = true; $("result").hidden = true;
   analyzer.reset(); tsBase = lastTs + 1; mode = "live";
   try { await navigator.wakeLock?.request("screen"); } catch {}
-  speak("開始");
   $("liveBtn").textContent = "結束並看結果";
   const W = video.videoWidth, H = video.videoHeight; $("stage").style.aspectRatio = `${W} / ${H}`;
   const t0 = performance.now();
@@ -534,12 +555,18 @@ async function startLive() {
 }
 function stopLive() {
   if (liveStream) { liveStream.getTracks().forEach((t) => t.stop()); liveStream = null; }
-  if (mode === "live") { mode = "idle"; renderResult(analyzer.reps); setStatus(`本次完成 ${analyzer.reps.length} 下。`); }
+  if (mode === "live") { mode = "idle"; renderResult(analyzer.reps); setStatus(`本次完成 ${analyzer.reps.length} 下。`); speak(summarySpeech(analyzer.reps)); }
   $("liveBtn").textContent = "即時鏡頭";
 }
 
+$("file").addEventListener("click", () => unlockSpeech());
 $("file").addEventListener("change", (e) => { const f = e.target.files[0]; if (f && landmarker) analyzeFile(f).catch((err) => setStatus(err.message, true)); e.target.value = ""; });
-$("liveBtn").addEventListener("click", () => { if (!landmarker) return; mode === "live" ? stopLive() : startLive(); });
+$("liveBtn").addEventListener("click", () => {
+  if (!landmarker) return;
+  if (mode === "live") { stopLive(); return; }
+  unlockSpeech("開始");  // 必須在點擊當下呼叫
+  startLive();
+});
 $("liveBtn").disabled = true;
 
 load().then(() => { $("liveBtn").disabled = false; setStatus("準備好了。錄一段側拍影片，或按「即時鏡頭」邊做邊分析。"); window.__ready = true; })
